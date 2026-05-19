@@ -1,0 +1,14 @@
+{
+  "exp_name": "exp03_medical_aug",
+  "epochs_phase1": 40,
+  "epochs_phase2": 15,
+  "batch_size": 16,
+  "lr": 0.0003,
+  "encoder_dim": 512,
+  "latent_dim": 128,
+  "img_size": 224,
+  "head_thresh": 1000,
+  "tail_thresh": 600,
+  "augmentation": "medically validated \u2014 no blur/elastic/noise/erasing, HAM10000 normalization",
+  "notes": "removed harmful augmentations, using actual HAM10000 mean/std"
+}

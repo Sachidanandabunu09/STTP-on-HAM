@@ -1,0 +1,19 @@
+{
+  "test_accuracy": 0.9042,
+  "test_balanced_accuracy": 0.8686,
+  "best_val_balanced_acc": 0.8844,
+  "class_groups": {
+    "nv": "head",
+    "mel": "median",
+    "bkl": "median",
+    "bcc": "tail",
+    "akiec": "tail",
+    "vasc": "tail",
+    "df": "tail"
+  },
+  "architecture": "ResNet50 + CVAE + SupCon + HybridMix + DualHead + EBS",
+  "phases": {
+    "phase1": "30 epochs HybridMix",
+    "phase2": "10 epochs Boundary Refinement"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "exp_name": "exp02_baseline",
+  "epochs_phase1": 40,
+  "epochs_phase2": 15,
+  "batch_size": 16,
+  "lr": 0.0003,
+  "encoder_dim": 512,
+  "latent_dim": 128,
+  "img_size": 224,
+  "head_thresh": 1000,
+  "tail_thresh": 600,
+  "augmentation": "albumentations + class-conditional tail aug",
+  "notes": "baseline run with HybridMix + EBS + SupCon"
+}

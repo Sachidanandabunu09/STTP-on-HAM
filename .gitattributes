@@ -1,0 +1,21 @@
+# Normalize line endings for all files
+* text=auto
+
+# Python files
+*.py text eol=lf
+*.ipynb text
+
+# CSV files
+*.csv text eol=lf
+
+# JSON files
+*.json text eol=lf
+
+# Documentation
+*.md text eol=lf
+*.txt text eol=lf
+
+# Binaries (don't try to convert)
+*.pkl binary
+*.pt binary
+*.pth binary

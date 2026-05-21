@@ -1,0 +1,9 @@
+{
+  "exp_name": "exp04_safe_aug_imagenet_norm",
+  "epochs_phase1": 35,
+  "epochs_phase2": 10,
+  "batch_size": 16,
+  "lr": 0.0003,
+  "augmentation": "safe dermoscopy aug + ImageNet norm",
+  "notes": "fixed norm back to ImageNet, kept only safe augmentations, added tail_transform, TTA x5"
+}

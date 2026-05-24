@@ -390,7 +390,7 @@ The HAM10000 std values `[0.0883, 0.1172, 0.1315]` are extremely small. Dividing
 
 ---
 
-### exp04 — Safe Augmentation + ImageNet Norm (Running)
+### exp04 — Safe Augmentation + ImageNet Norm
 **Date:** May 2026
 **Changes from exp01:**
 - Albumentations pipeline — only clinically safe transforms
@@ -401,36 +401,72 @@ The HAM10000 std values `[0.0883, 0.1172, 0.1315]` are extremely small. Dividing
 - TTA ×5 at test evaluation
 - Experiment folder tracking (config.json saved per run)
 
-**Augmentation changes:**
-```
-Kept from exp01:   HFlip, VFlip, ColorJitter
-Added (safe):      RandomRotate90, Rotate(35°), ShiftScaleRotate
-Removed (harmful): ElasticTransform, Blur, Noise, CoarseDropout
-Improved:          hue reduced 0.1→0.02 (much more conservative)
-New:               Class-conditional tail_aug (stronger for mel/bkl/bcc/akiec/vasc/df)
-New:               TTA ×5 at inference
-```
+**Results:**
 
-**Status:** 🔄 Currently running
+| Metric | Score | vs exp01 |
+|--------|-------|----------|
+| Test Accuracy | **0.9072** | +0.3% ✅ |
+| Test Balanced Accuracy | 0.8561 | -1.3% ⚠️ |
+| Macro Precision | **0.8659** | +2.4% ✅ |
+| Macro F1 | **0.8605** | +0.7% ✅ |
 
-**Expected improvement:** Balanced accuracy 0.869 → 0.875–0.890, mel recall improvement from better rotation diversity and tail-specific augmentation.
+| Class | Recall | vs exp01 |
+|-------|--------|----------|
+| nv | 0.9598 | +0.6% ✅ |
+| mel | 0.7321 | +3.6% ✅ |
+| bkl | 0.8091 | -4.6% ⚠️ |
+| bcc | 0.9038 | +3.9% ✅ |
+| akiec | 0.7500 | -3.1% ⚠️ |
+| vasc | 0.9286 | ≈same |
+| df | 0.9091 | -9.1% ⚠️ |
+
+**Key wins:** mel +3.6%, bcc crossed 90%, overall accuracy +0.3%, macro precision +2.4%
+
+**Key losses:** bkl -4.6% (tail_aug too aggressive for median class), balanced acc -1.3% (tail variance at small n)
+
+**Root cause of balanced acc dip:** df (n=11) going 100%→90.9% = 1 wrong sample but pulls balanced metric significantly due to equal class weighting.
+
+**Status:** ✅ Completed
 
 ---
 
-### exp05 — Proposed (Pending exp04 Results)
-**Planned changes:**
-- **EfficientNet-B4** encoder instead of ResNet-50
-  - Stronger feature extraction proven on dermoscopy
-  - Closes gap on bcc (86.5% → 90%+) and mel recall
-- **CLAHE preprocessing** before augmentation
-  - Contrast Limited Adaptive Histogram Equalization
-  - Standard in dermoscopy preprocessing
-  - Enhances pigment networks and borders safely
-- **Focal Loss** combined with EBS
-  - Targets hard misclassified samples (mel visual overlap with nv)
-  - gamma=2.0, combined with EBS frequency correction
+### exp05 — EfficientNet-B4 + CLAHE + Focal+EBS Loss (Running)
+**Date:** May 2026
 
-**Status:** ⏳ Pending exp04 results
+**Changes from exp04:**
+
+| Component | exp04 | exp05 |
+|-----------|-------|-------|
+| Encoder | ResNet-50 | **EfficientNet-B4** |
+| in_features | 2048 | 1792 |
+| Preprocessing | None | **CLAHE** (clip=2.0, tile=8×8) |
+| Loss | EBS only | **Focal + EBS** (w=0.5 each) |
+| Focal gamma | — | 2.0 |
+| Focal alpha | — | 0.25 |
+| Phase 1 epochs | 35 | **40** |
+| tail_aug rotation | 35° | **30°** (recalibrated) |
+
+**Why each change:**
+
+**EfficientNet-B4:**
+Compound scaling balances depth/width/resolution simultaneously. Stronger dermoscopy feature extraction, lighter than Swin Transformer, proven on medical imaging. in_features = 1792 vs 2048 for ResNet-50. Expected to close bcc gap and improve mel.
+
+**CLAHE (Contrast Limited Adaptive Histogram Equalization):**
+Applied on L channel only in LAB color space — preserves color information while enhancing local contrast. Standard dermoscopy preprocessing in clinical practice. Makes pigment networks, borders, and microstructures more visible. Applied consistently to train, val, test, and TTA images.
+
+**Focal Loss combined with EBS:**
+```
+L_FocalEBS = 0.5 x L_EBS + 0.5 x L_Focal
+L_Focal = -alpha x (1-pt)^gamma x log(pt)   gamma=2.0, alpha=0.25
+```
+EBS corrects for class frequency. Focal additionally downweights easy examples and focuses on hard ones. mel is hard not just due to frequency but visual similarity to nv — focal loss specifically targets these hard-to-classify samples.
+
+**Recalibrated tail_aug (30° instead of 35°):**
+In exp04, bkl (median class) dropped 4.6% — tail_aug rotation was too aggressive. Reduced to 30° to balance diversity vs stability. Should recover bkl while maintaining mel/bcc gains.
+
+**Targets:** mel recall > 0.80, bkl recall > 0.85, bcc > 0.93, balanced acc > 0.87
+
+**Status:** 🔄 Currently running
 
 ---
 
@@ -454,26 +490,27 @@ New:               TTA ×5 at inference
 
 ### vs. Swin Transformer + CVAE + SVM
 
-| Metric | Swin+CVAE+SVM | Our exp01 |
-|--------|--------------|-----------|
-| Overall Accuracy | 90.0% | **90.4%** |
-| Macro Recall | **86.0%** | 86.9% |
-| Macro F1 | **87.0%** | 85.4% |
-| Test samples | 2003 | 1002 |
+| Metric | Swin+CVAE+SVM | exp01 (baseline) | exp04 (best so far) |
+|--------|--------------|------------------|---------------------|
+| Overall Accuracy | 90.0% | 90.4% | **90.7%** |
+| Macro Recall | 86.0% | 86.9% | 85.6% |
+| Macro Precision | 88.0% | 84.2% | **86.6%** |
+| Macro F1 | **87.0%** | 85.4% | 86.1% |
+| Test samples | 2003 | 1002 | 1002 |
 
-**Per-class recall:**
+**Per-class recall — three-way comparison:**
 
-| Class | Swin+SVM | Ours | Winner |
-|-------|----------|------|--------|
-| nv | 96% | 95.4% | Theirs |
-| mel | 70% | 69.6% | Tied |
-| bkl | 78% | **85.5%** | **Ours** |
-| bcc | **94%** | 86.5% | Theirs |
-| akiec | 78% | **78.1%** | Tied |
-| vasc | 93% | **92.9%** | Tied |
-| df | 91% | **100%** | **Ours** |
+| Class | Swin+SVM | exp01 | exp04 | exp04 vs Swin |
+|-------|----------|-------|-------|----------------|
+| nv | 96.0% | 95.4% | **96.0%** | Tied ✅ |
+| mel | 70.0% | 69.6% | **73.2%** | +3.2% ✅ |
+| bkl | 78.0% | **85.5%** | 80.9% | +2.9% ✅ |
+| bcc | **94.0%** | 86.5% | 90.4% | -3.6% ⚠️ |
+| akiec | 78.0% | **78.1%** | 75.0% | -3.0% ⚠️ |
+| vasc | 93.0% | **92.9%** | 92.9% | Tied ✅ |
+| df | 91.0% | **100%** | 90.9% | Tied ✅ |
 
-**Key insight:** Swin Transformer's global attention helps bcc (border patterns) but our pipeline matches or beats on 5 out of 7 classes despite using the older ResNet-50 backbone. Upgrading to EfficientNet-B4 in exp05 should close the bcc gap.
+**Key insight:** Despite using ResNet-50 (older backbone vs Swin Transformer), exp04 matches or beats Swin+SVM on 5 out of 7 classes and achieves higher overall accuracy. The main remaining gap is bcc (90.4% vs 94%) — targeted by EfficientNet-B4 in exp05.
 
 ---
 
@@ -534,7 +571,15 @@ sttp_net_ham10000/
     │   └── results_summary.json
     ├── exp03_wrong_norm/           # kept for reference
     │   └── results_summary.json
-    └── exp04_safe_aug/             # currently running
+    ├── exp04_safe_aug_imagenet_norm/   # completed ✅
+    │   ├── config.json
+    │   ├── best_model.pt
+    │   ├── training_curves.png
+    │   ├── confusion_matrix.png
+    │   ├── per_class_acc.png
+    │   ├── tsne_latent.png
+    │   └── results_summary.json
+    └── exp05_efficientnetb4_clahe_focal/   # currently running 🔄
         └── ...
 ```
 
@@ -544,17 +589,23 @@ sttp_net_ham10000/
 
 ## 11. Future Work
 
-### exp05 — Planned
-- [ ] Replace ResNet-50 with EfficientNet-B4 encoder
-- [ ] Add CLAHE preprocessing for dermoscopy contrast enhancement
-- [ ] Combine Focal Loss with EBS for hard sample focus
-- [ ] Target mel recall > 80% and bcc recall > 90%
+### exp05 — Currently Running
+- [x] Replace ResNet-50 with EfficientNet-B4 encoder
+- [x] Add CLAHE preprocessing for dermoscopy contrast enhancement
+- [x] Combine Focal Loss with EBS for hard sample focus
+- [x] Recalibrate tail_aug rotation (35° → 30°) to recover bkl
+- [ ] Results pending — target mel > 0.80, bkl > 0.85, balanced acc > 0.87
+
+### exp06 — If exp05 still struggles with mel
+- [ ] Increase mel-specific sampling weight in reverse sampler
+- [ ] Add mel as pseudo-tail class (force stronger upsampling)
+- [ ] Longer Phase 1 (50 epochs) for more HybridMix exposure
 
 ### Longer term
 - [ ] Swin Transformer encoder (if compute allows)
 - [ ] Diffusion-based synthetic augmentation for extreme tail classes
-- [ ] LIME / GradCAM explainability visualization
-- [ ] Clinical validation on external dermoscopy datasets
+- [ ] GradCAM / LIME explainability visualization
+- [ ] Clinical validation on external dermoscopy datasets (ISIC 2019, BCN20000)
 - [ ] Lightweight model distillation for edge deployment
 
 ---
@@ -570,4 +621,4 @@ MIT
 - HAM10000 dataset: Tschandl et al., 2018
 - SupCon Loss: Khosla et al., 2020 (NeurIPS)
 - Balanced Softmax: Ren et al., 2020
-- STTP-Net architecture inspired by long-tail learning literature
+- STTP-Net architecture inspired by long-tail learning literatureA

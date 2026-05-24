@@ -1,0 +1,11 @@
+{
+  "exp_name": "exp06_resnet50_baseline_v2",
+  "epochs_phase1": 30,
+  "epochs_phase2": 10,
+  "batch_size": 16,
+  "lr": 0.0003,
+  "encoder": "ResNet-50 (ImageNet pretrained)",
+  "augmentation": "torchvision basic \u2014 HFlip, VFlip, ColorJitter(0.2), Rotation(20)",
+  "loss": "EBS only",
+  "notes": "Exact replication of exp01 baseline that gave 0.904 acc / 0.869 bal"
+}

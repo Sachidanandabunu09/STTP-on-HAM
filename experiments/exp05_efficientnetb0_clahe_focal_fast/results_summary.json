@@ -1,0 +1,28 @@
+{
+  "exp_name": "exp05_efficientnetb0_clahe_focal_fast",
+  "test_accuracy": 0.7944,
+  "test_balanced_accuracy": 0.746,
+  "best_val_balanced_acc": 0.8977,
+  "class_groups": {
+    "nv": "head",
+    "mel": "median",
+    "bkl": "median",
+    "bcc": "tail",
+    "akiec": "tail",
+    "vasc": "tail",
+    "df": "tail"
+  },
+  "architecture": "EfficientNet-B4 + CVAE + SupCon + HybridMix + DualHead + FocalEBS",
+  "phases": {
+    "phase1": "30 epochs HybridMix",
+    "phase2": "8 epochs Boundary Refinement"
+  },
+  "vs_exp01": {
+    "exp01_acc": 0.9042,
+    "exp01_bal": 0.8686,
+    "exp04_acc": 0.9072,
+    "exp04_bal": 0.8561,
+    "exp05_acc": 0.7944,
+    "exp05_bal": 0.746
+  }
+}

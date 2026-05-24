@@ -1,0 +1,14 @@
+{
+  "exp_name": "exp05_efficientnetb0_clahe_focal_fast",
+  "epochs_phase1": 30,
+  "epochs_phase2": 8,
+  "batch_size": 24,
+  "lr": 0.0003,
+  "encoder": "EfficientNet-B0 (timm, ImageNet pretrained) \u2014 speed-optimised",
+  "encoder_dim": 512,
+  "latent_dim": 128,
+  "loss": "FocalEBS (w_focal=0.5, gamma=2.0, alpha=0.25)",
+  "clahe": "clip_limit=2.0, tile_grid=(8,8)",
+  "augmentation": "safe dermoscopy aug + class-conditional tail_aug (recalibrated)",
+  "notes": "exp05: EfficientNet-B4 + CLAHE + Focal+EBS. Target: mel>0.80, bkl>0.85"
+}

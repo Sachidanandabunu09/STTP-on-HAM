@@ -1,0 +1,20 @@
+{
+  "exp_name": "exp06_resnet50_baseline_v2",
+  "test_accuracy": 0.9102,
+  "test_balanced_accuracy": 0.8764,
+  "best_val_balanced_acc": 0.8844,
+  "class_groups": {
+    "nv": "head",
+    "mel": "median",
+    "bkl": "median",
+    "bcc": "tail",
+    "akiec": "tail",
+    "vasc": "tail",
+    "df": "tail"
+  },
+  "architecture": "ResNet-50 + CVAE + SupCon + HybridMix + DualHead + EBS",
+  "phases": {
+    "phase1": "30 epochs HybridMix",
+    "phase2": "10 epochs Boundary Refinement"
+  }
+}

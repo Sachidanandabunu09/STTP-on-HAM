@@ -430,43 +430,116 @@ The HAM10000 std values `[0.0883, 0.1172, 0.1315]` are extremely small. Dividing
 
 ---
 
-### exp05 — EfficientNet-B4 + CLAHE + Focal+EBS Loss (Running)
+### exp05 — EfficientNet-B4 + CLAHE + Focal+EBS Loss
 **Date:** May 2026
 
 **Changes from exp04:**
 
 | Component | exp04 | exp05 |
 |-----------|-------|-------|
-| Encoder | ResNet-50 | **EfficientNet-B4** |
-| in_features | 2048 | 1792 |
-| Preprocessing | None | **CLAHE** (clip=2.0, tile=8×8) |
-| Loss | EBS only | **Focal + EBS** (w=0.5 each) |
-| Focal gamma | — | 2.0 |
-| Focal alpha | — | 0.25 |
-| Phase 1 epochs | 35 | **40** |
-| tail_aug rotation | 35° | **30°** (recalibrated) |
+| Encoder | ResNet-50 | EfficientNet-B4 |
+| Preprocessing | None | CLAHE |
+| Loss | EBS only | Focal + EBS |
+| Phase 1 epochs | 35 | 40 (reduced to 30 due to speed) |
 
-**Why each change:**
+**Why it failed:**
 
-**EfficientNet-B4:**
-Compound scaling balances depth/width/resolution simultaneously. Stronger dermoscopy feature extraction, lighter than Swin Transformer, proven on medical imaging. in_features = 1792 vs 2048 for ResNet-50. Expected to close bcc gap and improve mel.
+**Speed issue:** EfficientNet-B4 is 5× slower than ResNet-50. At 17s/iteration on the RTX 5050, 50 epochs would have taken ~100 hours. Training was interrupted after only 38 epochs.
 
-**CLAHE (Contrast Limited Adaptive Histogram Equalization):**
-Applied on L channel only in LAB color space — preserves color information while enhancing local contrast. Standard dermoscopy preprocessing in clinical practice. Makes pigment networks, borders, and microstructures more visible. Applied consistently to train, val, test, and TTA images.
+**Root cause of bad results (0.794 acc, 0.746 bal):**
+- Too many changes at once — EfficientNet + CLAHE + Focal Loss simultaneously
+- Only 38 epochs not enough for EfficientNet to converge with new backbone
+- Same LR (3e-4) used for entire model — EfficientNet pretrained layers need much lower LR than new heads
+- GPU was running on AMD integrated graphics (Radeon 780M) instead of NVIDIA RTX 5050 — detected mid-training, fixed for exp06
 
-**Focal Loss combined with EBS:**
+**Results:**
+
+| Metric | Score |
+|--------|-------|
+| Test Accuracy | 0.7944 |
+| Test Balanced Accuracy | 0.7460 |
+
+**Status:** ❌ Failed — too many simultaneous changes, speed issues, wrong GPU
+
+---
+
+### exp06 — ResNet-50 Baseline v2 + Cache + TTA (Best Result)
+**Date:** May 2026
+
+**Philosophy change:** Stop over-engineering. Go back to what worked (exp01) and make only targeted improvements.
+
+**Changes from exp01:**
+
+| Component | exp01 | exp06 |
+|-----------|-------|-------|
+| Architecture | ResNet-50 + CVAE + SupCon + HybridMix + DualHead + EBS | Same ✅ |
+| Augmentation | Basic torchvision | Same ✅ |
+| Normalization | ImageNet | Same ✅ |
+| NUM_WORKERS | 4 | 0 (Windows stability) |
+| Data loading | Raw JPEG from disk each epoch | **Cached tensors (.pt files)** |
+| Test evaluation | Single pass | **TTA ×5** |
+| GPU | AMD Radeon (wrong) | **NVIDIA RTX 5050 (fixed)** |
+| Experiment tracking | No | Yes — config.json + EXP_DIR |
+
+**What the cache does:**
 ```
-L_FocalEBS = 0.5 x L_EBS + 0.5 x L_Focal
-L_Focal = -alpha x (1-pt)^gamma x log(pt)   gamma=2.0, alpha=0.25
+Before cache:
+  Each epoch → load 8012 JPEGs from disk → decode → resize → transform
+  = 17 seconds per iteration, GPU utilization spiky 0-10%
+
+After cache:
+  One-time: load all images, resize to 224×224, save as tensors to .pt files
+  Each epoch → read pre-decoded tensors from .pt files → transform
+  = 1.7 seconds per iteration, GPU utilization continuous
+  Cache size: ~3.1 GB total (train.pt + val.pt + test.pt)
 ```
-EBS corrects for class frequency. Focal additionally downweights easy examples and focuses on hard ones. mel is hard not just due to frequency but visual similarity to nv — focal loss specifically targets these hard-to-classify samples.
 
-**Recalibrated tail_aug (30° instead of 35°):**
-In exp04, bkl (median class) dropped 4.6% — tail_aug rotation was too aggressive. Reduced to 30° to balance diversity vs stability. Should recover bkl while maintaining mel/bcc gains.
+**What TTA does:**
+```
+Standard inference: 1 forward pass → softmax → prediction
+TTA ×5: 5 forward passes (1 clean + 4 augmented views)
+        → average probabilities → prediction
+Free +0.5-1% accuracy gain at test time only
+```
 
-**Targets:** mel recall > 0.80, bkl recall > 0.85, bcc > 0.93, balanced acc > 0.87
+**Results:**
 
-**Status:** 🔄 Currently running
+| Metric | Score | vs exp01 | vs Friend (Swin+SVM) |
+|--------|-------|----------|----------------------|
+| Test Accuracy | **0.9102** | +0.6% ✅ | **+1.0%** ✅ |
+| Balanced Accuracy | **0.8764** | +0.8% ✅ | **+0.6%** ✅ |
+| Macro Precision | 0.8615 | +1.9% ✅ | -1.9% |
+| Macro Recall | **0.8764** | +0.8% ✅ | **+1.6%** ✅ |
+| Macro F1 | **0.8687** | +1.5% ✅ | -0.1% |
+
+| Class | Precision | Recall | F1 | Support | vs exp01 | vs Friend |
+|-------|-----------|--------|----|---------|----------|-----------|
+| nv | 0.9581 | 0.9553 | 0.9567 | 671 | -0.1% | -0.5% |
+| mel | 0.7593 | 0.7321 | 0.7455 | 112 | **+3.6%** ✅ | **+3.2%** ✅ |
+| bkl | 0.8304 | 0.8455 | 0.8378 | 110 | -1.0% | **+6.6%** ✅ |
+| bcc | 0.8889 | 0.9231 | 0.9057 | 52 | **+5.8%** ✅ | -1.7% |
+| akiec | 0.7273 | 0.7500 | 0.7385 | 32 | -3.1% | -3.0% |
+| vasc | 0.8667 | 0.9286 | 0.8966 | 14 | ≈same | ≈same |
+| df | 1.0000 | 1.0000 | 1.0000 | 11 | same | **+9.0%** ✅ |
+
+**Key insight:** The improvement over exp01 came entirely from TTA ×5 and fixing the GPU issue. No architecture change was needed — the baseline was already strong.
+
+**Beats friend's Swin+SVM on:** overall accuracy, balanced accuracy, macro recall, mel recall (+3.2%), bkl recall (+6.6%), df recall (+9%), despite using older ResNet-50 backbone vs Swin Transformer.
+
+**Status:** ✅ **BEST RESULT — Final**
+
+---
+
+### All Experiments Summary
+
+| Exp | Accuracy | Balanced Acc | mel Recall | bcc Recall | df Recall | Status |
+|-----|----------|--------------|------------|------------|-----------|--------|
+| exp01 | 0.904 | 0.869 | 69.6% | 86.5% | 100% | Baseline ✅ |
+| exp02 | — | — | — | — | — | Interrupted ❌ |
+| exp03 | 0.808 | 0.761 | 41.1% | 78.9% | 81.8% | Wrong norm ❌ |
+| exp04 | 0.907 | 0.856 | 73.2% | 90.4% | 90.9% | Completed ✅ |
+| exp05 | 0.794 | 0.746 | 54.5% | 57.7% | 90.9% | Failed ❌ |
+| **exp06** | **0.910** | **0.876** | **73.2%** | **92.3%** | **100%** | **Best ✅** |
 
 ---
 
@@ -510,7 +583,7 @@ In exp04, bkl (median class) dropped 4.6% — tail_aug rotation was too aggressi
 | vasc | 93.0% | **92.9%** | 92.9% | Tied ✅ |
 | df | 91.0% | **100%** | 90.9% | Tied ✅ |
 
-**Key insight:** Despite using ResNet-50 (older backbone vs Swin Transformer), exp04 matches or beats Swin+SVM on 5 out of 7 classes and achieves higher overall accuracy. The main remaining gap is bcc (90.4% vs 94%) — targeted by EfficientNet-B4 in exp05.
+**Key insight — exp06 final result:** Despite using ResNet-50 (older backbone vs Swin Transformer), exp06 beats Swin+SVM on overall accuracy (91.0% vs 90.0%), balanced accuracy (87.6% vs 86.0%), and 4 out of 7 per-class recalls. The only remaining gaps are bcc (92.3% vs 94%) and akiec (75% vs 78%) — both by small margins.
 
 ---
 
@@ -579,34 +652,54 @@ sttp_net_ham10000/
     │   ├── per_class_acc.png
     │   ├── tsne_latent.png
     │   └── results_summary.json
-    └── exp05_efficientnetb4_clahe_focal/   # currently running 🔄
-        └── ...
+    ├── exp05_efficientnetb4_clahe_focal/   # failed ❌
+    │   └── results_summary.json
+    └── exp06_resnet50_baseline_v2/         # BEST RESULT ✅
+        ├── config.json
+        ├── best_model.pt
+        ├── training_curves.png
+        ├── confusion_matrix.png
+        ├── per_class_acc.png
+        ├── tsne_latent.png
+        └── results_summary.json
 ```
 
 **Note:** Raw images (`data/raw/images/`) and model checkpoints (`*.pt`) are excluded from git via `.gitignore` due to file size.
 
 ---
 
-## 11. Future Work
+## 11. Lessons Learned
 
-### exp05 — Currently Running
-- [x] Replace ResNet-50 with EfficientNet-B4 encoder
-- [x] Add CLAHE preprocessing for dermoscopy contrast enhancement
-- [x] Combine Focal Loss with EBS for hard sample focus
-- [x] Recalibrate tail_aug rotation (35° → 30°) to recover bkl
-- [ ] Results pending — target mel > 0.80, bkl > 0.85, balanced acc > 0.87
+### What worked
+- Simple ResNet-50 backbone with well-tuned training strategy beats complex architectures
+- TTA ×5 at inference gives free +0.6-0.8% improvement with zero training cost
+- Fixing data loading bottleneck (cache) is more impactful than architecture changes
+- EBS Loss + HybridMix + dual-head is a robust combination for long-tail problems
+- Two-phase training (HybridMix → Boundary Refinement) consistently helps
 
-### exp06 — If exp05 still struggles with mel
-- [ ] Increase mel-specific sampling weight in reverse sampler
-- [ ] Add mel as pseudo-tail class (force stronger upsampling)
-- [ ] Longer Phase 1 (50 epochs) for more HybridMix exposure
+### What failed and why
+- HAM10000-specific normalization — destroyed pretrained ResNet features (exp03)
+- Aggressive augmentation (ElasticTransform, Blur, Noise) — destroyed clinical features (exp02)
+- EfficientNet-B4 without learning rate warmup — too many changes at once (exp05)
+- High NUM_WORKERS on Windows — crashes multiprocessing (fixed with cache approach)
+
+### Key rule learned
+> **Always change one thing at a time. The baseline was strong — every multi-change experiment made things worse.**
+
+---
+
+## 12. Future Work
+
+### If continuing this project
+- [ ] mel recall is still the weakest at 73.2% — increase mel sampling weight specifically
+- [ ] akiec at 75% — consider pseudo-labeling or stronger class-conditional aug
+- [ ] Try EfficientNet-B0 (not B4) with proper differential learning rates
+- [ ] GradCAM visualization to understand what features the model uses
 
 ### Longer term
-- [ ] Swin Transformer encoder (if compute allows)
-- [ ] Diffusion-based synthetic augmentation for extreme tail classes
-- [ ] GradCAM / LIME explainability visualization
-- [ ] Clinical validation on external dermoscopy datasets (ISIC 2019, BCN20000)
-- [ ] Lightweight model distillation for edge deployment
+- [ ] Clinical validation on external datasets (ISIC 2019, BCN20000)
+- [ ] Lightweight distillation for edge/mobile deployment
+- [ ] Swin Transformer with proper LR warmup and scheduling
 
 ---
 
@@ -621,4 +714,4 @@ MIT
 - HAM10000 dataset: Tschandl et al., 2018
 - SupCon Loss: Khosla et al., 2020 (NeurIPS)
 - Balanced Softmax: Ren et al., 2020
-- STTP-Net architecture inspired by long-tail learning literatureA
+- STTP-Net architecture inspired by long-tail learning literature
